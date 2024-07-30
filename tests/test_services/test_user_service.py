@@ -179,3 +179,16 @@ async def test_create_user_with_additional_fields(db_session, email_service):
     assert created_user.email == user_data["email"]
     assert created_user.linkedin_profile_url == user_data["linkedin_profile_url"]
     assert created_user.github_profile_url == user_data["github_profile_url"]
+
+# Test fetching a user by nickname when the user exists
+async def test_get_user_by_nickname_exists(db_session, user):
+    retrieved_user = await UserService.get_by_nickname(db_session, user.nickname)
+    assert retrieved_user is not None
+    assert retrieved_user.nickname == user.nickname
+    assert retrieved_user.id == user.id
+
+# Test fetching a user by nickname when the user does not exist
+async def test_get_user_by_nickname_does_not_exist(db_session):
+    non_existent_nickname = "non_existent_nickname"
+    retrieved_user = await UserService.get_by_nickname(db_session, non_existent_nickname)
+    assert retrieved_user is None
