@@ -161,3 +161,21 @@ async def test_unlock_user_account(db_session, locked_user):
     assert unlocked, "The account should be unlocked"
     refreshed_user = await UserService.get_by_id(db_session, locked_user.id)
     assert not refreshed_user.is_locked, "The user should no longer be locked"
+
+# Test creating a user and verifying additional fields
+async def test_create_user_with_additional_fields(db_session, email_service):
+    user_data = {
+        "nickname": generate_nickname(),
+        "email": "additional_fields_user@example.com",
+        "password": "ValidPassword123!",
+        "role": "ANONYMOUS",
+        "is_professional": True,
+        "linkedin_profile_url": "https://www.linkedin.com/in/testuser",
+        "github_profile_url": "https://github.com/testuser"
+    }
+    created_user = await UserService.create(db_session, user_data, email_service)
+    
+    assert created_user is not None
+    assert created_user.email == user_data["email"]
+    assert created_user.linkedin_profile_url == user_data["linkedin_profile_url"]
+    assert created_user.github_profile_url == user_data["github_profile_url"]
