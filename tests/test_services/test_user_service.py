@@ -180,15 +180,130 @@ async def test_create_user_with_additional_fields(db_session, email_service):
     assert created_user.linkedin_profile_url == user_data["linkedin_profile_url"]
     assert created_user.github_profile_url == user_data["github_profile_url"]
 
-# Test fetching a user by nickname when the user exists
-async def test_get_user_by_nickname_exists(db_session, user):
-    retrieved_user = await UserService.get_by_nickname(db_session, user.nickname)
+# Test getting a user by nickname when the user exists (Admin Access)
+async def test_get_user_by_nickname_exists(db_session, email_service, async_client, admin_token):
+    
+    # Create an anonymous user to be fetched
+    user_data = {
+        "nickname": generate_nickname(),
+        "email": "valid_user@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+
+    # Create the anonymous user in the database using the UserService
+    user = await UserService.create(db_session, user_data, email_service)
+
+    # Attempt to fetch the user by nickname using the admin token
+    response = await async_client.get(
+        f"/users/nickname/{user.nickname}",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    # Asserting responses
+    retrieved_user = response.json()
     assert retrieved_user is not None
-    assert retrieved_user.nickname == user.nickname
-    assert retrieved_user.id == user.id
+    assert retrieved_user["nickname"] == user.nickname
+
+# Test unauthorized access by manager for nickname endpoint
+async def test_get_user_by_nickname_unauthorized(db_session, email_service, async_client, manager_token):
+    
+    # Create an anonymous user to be fetched
+    anonymous_data = {
+        "nickname": generate_nickname(),
+        "email": "anonymous_user@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+
+    # Create the anonymous user in the database using the UserService
+    anonymous_user = await UserService.create(db_session, anonymous_data, email_service)
+
+    # Attempt to fetch the user by nickname using the admin token
+    response = await async_client.get(
+        f"/users/nickname/{anonymous_user.nickname}",
+        headers={"Authorization": f"Bearer {manager_token}"}
+    )
+
+    # Asserting responses
+    assert response.json()["detail"] == "Operation not permitted"
 
 # Test fetching a user by nickname when the user does not exist
-async def test_get_user_by_nickname_does_not_exist(db_session):
+async def test_get_user_by_nickname_does_not_exist(async_client, admin_token):
+    
     non_existent_nickname = "non_existent_nickname"
-    retrieved_user = await UserService.get_by_nickname(db_session, non_existent_nickname)
-    assert retrieved_user is None
+    
+    # Attempt to fetch the non-existing user by nickname using the admin token
+    response = await async_client.get(
+        f"/users/nickname/{non_existent_nickname}",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    
+    # Asserting responses
+    assert response.status_code == 404
+    assert response.json()["detail"] == "User not found"
+
+
+# Test fetching a user by email when the user exists (Admin Access)
+async def test_get_user_by_email_exists(db_session, email_service, async_client, admin_token):
+    
+    # Create an anonymous user to be fetched
+    user_data = {
+        "nickname": generate_nickname(),
+        "email": "valid_user@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+
+    # Create the anonymous user in the database using the UserService
+    user = await UserService.create(db_session, user_data, email_service)
+
+    # Attempt to fetch the user by email using the admin token
+    response = await async_client.get(
+        f"/users/email/{user.email}",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    # Asserting responses
+    retrieved_user = response.json()
+    assert retrieved_user is not None
+    assert retrieved_user["email"] == user.email
+
+
+# Test unauthorized access by manager for email endpoint
+async def test_get_user_by_email_unauthorized(db_session, email_service, async_client, manager_token):
+    
+    # Create an anonymous user to be fetched
+    anonymous_data = {
+        "nickname": generate_nickname(),
+        "email": "anonymous_user@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+        
+    # Create the anonymous user in the database using the UserService
+    anonymous_user = await UserService.create(db_session, anonymous_data, email_service)
+
+    # Attempt to fetch the user by email using the admin token
+    response = await async_client.get(
+        f"/users/email/{anonymous_user.email}",
+        headers={"Authorization": f"Bearer {manager_token}"}
+    )
+
+    # Asserting responses
+    assert response.json()["detail"] == "Operation not permitted"
+
+
+# Test fetching a user by email when the user does not exist
+async def test_get_user_by_email_does_not_exist(async_client, admin_token):
+
+    non_existent_email = "non_existent_email@example.com"
+    
+    # Attempt to fetch the non-existing user by email using the admin token
+    response = await async_client.get(
+        f"/users/email/{non_existent_email}",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    
+    assert response.status_code == 404
+    assert response.json()["detail"] == "User not found"
