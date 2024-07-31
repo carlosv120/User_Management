@@ -320,7 +320,7 @@ async def get_user_by_email(email: str, request: Request, db: AsyncSession = Dep
         links=create_user_links(user.id, request)  
     )
 
-@router.get("/users/by-role/{role}", tags=["User Management Feature (Admin Role)"])
+@router.get("/users/role/{role}", tags=["User Management Feature (Admin Role)"])
 async def get_users_by_role(
     role: str,
     request: Request,
