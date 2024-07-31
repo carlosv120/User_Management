@@ -359,8 +359,7 @@ async def get_users_by_role(
         "total": total_users,
         "page": (skip // limit) + 1,
         "size": len(user_responses),
-        "total_pages": total_pages,
-        "links": pagination_links
+        "total_pages": total_pages
     }
 
     return response_data
