@@ -337,7 +337,7 @@ async def get_users_by_role(
         total_users = result.scalar()
 
         if total_users == 0:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found or no users with this role")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No users with this role")
 
         # Calculate total pages
         total_pages = (total_users + limit - 1) // limit
@@ -347,7 +347,9 @@ async def get_users_by_role(
         users_result = await db.execute(users_query)
         users = users_result.scalars().all()
 
-    except:
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user role provided")
 
     user_responses = [UserResponse.model_validate(user) for user in users]
@@ -357,7 +359,7 @@ async def get_users_by_role(
     response_data = {
         "items": user_responses,
         "total": total_users,
-        "page": (skip // limit) + 1,
+        "page": skip + 1,
         "size": len(user_responses),
         "total_pages": total_pages
     }
