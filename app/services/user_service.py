@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import secrets
 from typing import Optional, Dict, List
 from pydantic import ValidationError
-from sqlalchemy import func, null, update, select
+from sqlalchemy import func, null, update, select, and_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_email_service, get_settings
@@ -52,6 +52,13 @@ class UserService:
     @classmethod
     async def get_by_role(cls, session: AsyncSession, role: str, skip: int = 0, limit: int = 10) -> List[User]:
         query = select(User).where(User.role == role).offset(skip).limit(limit)
+        result = await session.execute(query)
+        return result.scalars().all()
+
+    @classmethod
+    async def get_users_by_created_at(
+        cls, session: AsyncSession, start_date: datetime, end_date: datetime, skip: int = 0, limit: int = 10) -> List[User]:
+        query = select(User).where(and_(User.created_at >= start_date, User.created_at <= end_date)).offset(skip * limit).limit(limit)
         result = await session.execute(query)
         return result.scalars().all()
 
