@@ -21,7 +21,7 @@ Key Highlights:
 from builtins import dict, int, len, str
 from datetime import timedelta, datetime
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Response, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -371,6 +371,7 @@ async def get_users_by_created_at(
     start_date: str,
     end_date: str,
     request: Request,
+    order: str = Query(... , description="Sort order of the results by creation date", enum=["Created (earliest)", "Created (latest)"]),
     skip: int = 0,
     limit: int = 10,
     db: AsyncSession = Depends(get_db),
@@ -382,6 +383,7 @@ async def get_users_by_created_at(
     Parameters:
     - start_date: The start date for the filter range (YYYY-MM-DD format).
     - end_date: The end date for the filter range (YYYY-MM-DD format).
+    - order: Sort order of the results by creation date (asc for ascending, desc for descending).
     - skip: Number of records to skip for pagination.
     - limit: Maximum number of records to return for pagination.
     """
@@ -391,7 +393,7 @@ async def get_users_by_created_at(
     except ValueError:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid date format. Use YYYY-MM-DD format.")
 
-    users = await UserService.get_users_by_created_at(db, start_date_parsed, end_date_parsed, skip, limit)
+    users = await UserService.get_users_by_created_at(db, start_date_parsed, end_date_parsed, order, skip, limit)
 
     if not users:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No users found within the specified date range")

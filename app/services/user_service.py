@@ -57,8 +57,9 @@ class UserService:
 
     @classmethod
     async def get_users_by_created_at(
-        cls, session: AsyncSession, start_date: datetime, end_date: datetime, skip: int = 0, limit: int = 10) -> List[User]:
-        query = select(User).where(and_(User.created_at >= start_date, User.created_at <= end_date)).offset(skip * limit).limit(limit)
+        cls, session: AsyncSession, start_date: datetime, end_date: datetime, order: str, skip: int = 0, limit: int = 10) -> List[User]:
+        order_by = User.created_at.asc() if order == "Created (earliest)" else User.created_at.desc()
+        query = select(User).where(and_(User.created_at >= start_date, User.created_at <= end_date)).order_by(order_by).offset(skip * limit).limit(limit)
         result = await session.execute(query)
         return result.scalars().all()
 
