@@ -64,6 +64,16 @@ class UserService:
         return result.scalars().all()
 
     @classmethod
+    async def search_users(cls, session: AsyncSession, field: str, value: str, skip: int = 0, limit: int = 10) -> List[User]:
+        if field not in ["first_name", "last_name", "nickname"]:
+            return []
+
+        query = select(User).where(getattr(User, field).ilike(f"%{value}%")).offset(skip * limit).limit(limit)
+        result = await session.execute(query)
+        return result.scalars().all()
+
+
+    @classmethod
     async def create(cls, session: AsyncSession, user_data: Dict[str, str], email_service: EmailService) -> Optional[User]:
         try:
             validated_data = UserCreate(**user_data).model_dump()

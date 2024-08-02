@@ -416,3 +416,57 @@ async def get_users_by_created_at(
     }
 
     return response_data
+
+@router.get("/users/search/", tags=["User Management Feature (Admin Role)"])
+async def search_users(
+    request: Request,
+    field: str = Query(..., description="The field to search by", enum=["first_name", "last_name", "nickname"]),
+    value: str = Query(..., description="The value to search for"),
+    skip: int = 0,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_role(["ADMIN"]))
+):
+    """
+    Endpoint to search users by a specific field.
+
+    Parameters:
+    - field: The field to search by (first_name, last_name, nickname).
+    - value: The value to search for.
+    - skip: Number of records to skip for pagination.
+    - limit: Maximum number of records to return for pagination.
+    """
+    try:
+        # Dynamically build the filter expression based on the field
+        filter_expr = getattr(User, field).ilike(f"%{value}%")
+    except AttributeError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid search field: {field}")
+
+    total_query = select(func.count()).select_from(User).where(filter_expr)
+    total_result = await db.execute(total_query)
+    total_users = total_result.scalar()
+
+    if total_users == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No users found for {field} = {value}")
+
+    total_pages = (total_users + limit - 1) // limit
+
+    if skip * limit >= total_users:
+        raise HTTPException(status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE, detail="Requested page is out of range")
+
+    users_query = select(User).where(filter_expr).offset(skip * limit).limit(limit)
+    users_result = await db.execute(users_query)
+    users = users_result.scalars().all()
+
+    user_responses = [UserResponse.model_validate(user) for user in users]
+    pagination_links = generate_pagination_links(request, skip, limit, total_users)
+
+    response_data = {
+        "items": user_responses,
+        "total": total_users,
+        "page": skip + 1,
+        "size": len(user_responses),
+        "total_pages": total_pages,
+    }
+
+    return response_data
