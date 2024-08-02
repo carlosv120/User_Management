@@ -493,7 +493,7 @@ async def test_get_users_by_created_at_exists(db_session, email_service, async_c
 
     # Attempt to fetch users by created_at using the admin token
     response = await async_client.get(
-        "/users/created/2024-01-01/2024-12-31?skip=0&limit=10",
+        "/users/created/2024-01-01/2024-12-31?skip=0&limit=10&order=asc",
         headers={"Authorization": f"Bearer {admin_token}"}
     )
     
@@ -554,7 +554,7 @@ async def test_get_users_by_created_at_no_users_found(db_session, email_service,
 
     # Attempt to fetch users by created_at for a range that has no users
     response = await async_client.get(
-        "/users/created/2024-01-01/2024-01-02?skip=0&limit=10",
+        "/users/created/2024-01-01/2024-01-02?skip=0&limit=10&order=asc",
         headers={"Authorization": f"Bearer {admin_token}"}
     )
     
@@ -577,7 +577,7 @@ async def test_get_users_by_created_at_pagination(db_session, email_service, asy
 
     # Attempt to fetch users by created_at with pagination (first page)
     response = await async_client.get(
-        "/users/created/2024-01-01/2024-12-31?skip=0&limit=2",
+        "/users/created/2024-01-01/2024-12-31?skip=0&limit=2&order=asc",
         headers={"Authorization": f"Bearer {admin_token}"}
     )
 
@@ -592,7 +592,7 @@ async def test_get_users_by_created_at_pagination(db_session, email_service, asy
 
     # Attempt to fetch the second page
     response = await async_client.get(
-        "/users/created/2024-01-01/2024-12-31?skip=1&limit=2",
+        "/users/created/2024-01-01/2024-12-31?skip=1&limit=2&order=asc",
         headers={"Authorization": f"Bearer {admin_token}"}
     )
 
