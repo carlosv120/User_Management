@@ -390,19 +390,6 @@ async def test_get_users_by_role_not_found(async_client, admin_token):
     assert response.status_code == 400
     assert response.json()["detail"] == "Invalid user role provided"
 
-# Test fetching users by role when an invalid role is provided
-async def test_get_users_by_role_invalid(async_client, admin_token):
-    invalid_role = "INVALIDROLE!@#"
-
-    # Attempt to fetch users by an invalid role using the admin token
-    response = await async_client.get(
-        f"/users/role/{invalid_role}?skip=0&limit=10",
-        headers={"Authorization": f"Bearer {admin_token}"}
-    )
-    
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Invalid user role provided"
- 
 # Test fetching users by role when no users are found for the given role (Admin Access)
 async def test_get_users_by_role_no_users_found(db_session, email_service, async_client, admin_token):
     # Create a user with a different role to ensure no users with the given role
@@ -637,3 +624,165 @@ async def test_get_users_by_created_at_descending_order(db_session, email_servic
     assert len(retrieved_users["items"]) == 3
     assert retrieved_users["items"][0]["email"] == "user2@example.com"
     assert retrieved_users["items"][1]["email"] == "user1@example.com"
+
+# Test searching users by first name when users exist (Admin Access) (This also applies for last name)
+async def test_search_users_by_firstname_exists(db_session, email_service, async_client, admin_token):
+    # Create users with the default role (ANONYMOUS)
+    user_data_1 = {
+        "nickname": "brave_raccoon_181",
+        "email": "user1@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name,
+        "first_name": "John"
+    }
+
+    user_data_2 = {
+        "nickname": "clever_raccoon_182",
+        "email": "user2@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name,
+        "first_name": "Johnny"
+    }
+
+    # Create the users in the database using the UserService
+    await UserService.create(db_session, user_data_1, email_service)
+    await UserService.create(db_session, user_data_2, email_service)
+
+    # Attempt to search users by partial first name using the admin token
+    response = await async_client.get(
+        "/users/search/?field=first_name&value=John&skip=0&limit=10",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    
+    # Print the response JSON for debugging
+    retrieved_users = response.json()
+    assert retrieved_users is not None
+    assert retrieved_users["total"] == 3
+    assert retrieved_users["page"] == 1
+    assert retrieved_users["size"] == 3
+    assert retrieved_users["total_pages"] == 1
+
+# Test searching users by nickname when users exist (Admin Access)
+async def test_search_users_by_nickname_exists(db_session, email_service, async_client, admin_token):
+    # Create multiple users to increase the chance of having "raccoon" in the nickname
+    for i in range(10):
+        user_data = {
+            "nickname": generate_nickname(),
+            "email": f"user{i}@example.com",
+            "password": "ValidPassword123!",
+            "role": UserRole.ANONYMOUS.name
+        }
+        created_user = await UserService.create(db_session, user_data, email_service)
+        assert created_user is not None, f"Failed to create user {i}"
+
+    # Attempt to search users by partial nickname, in this case raccoon
+    response = await async_client.get(
+        "/users/search/?field=nickname&value=raccoon&skip=0&limit=100",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    # Asserting responses
+    retrieved_users = response.json()
+    assert retrieved_users is not None
+    assert retrieved_users["total"] > 0, "Expected to find users with 'raccoon' in their nickname"
+    assert len(retrieved_users["items"]) > 0
+    assert "raccoon" in retrieved_users["items"][0]["nickname"]
+
+# Test unauthorized access by manager for search endpoint
+async def test_search_users_unauthorized(db_session, email_service, async_client, manager_token):
+    # Create users with the default role (ANONYMOUS)
+    user_data_1 = {
+        "nickname": "brave_raccoon_181",
+        "email": "user1@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+
+    user_data_2 = {
+        "nickname": "clever_raccoon_182",
+        "email": "user2@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+
+    # Create the users in the database using the UserService
+    await UserService.create(db_session, user_data_1, email_service)
+    await UserService.create(db_session, user_data_2, email_service)
+
+    # Attempt to search users by partial nickname using the manager token
+    response = await async_client.get(
+        "/users/search/?field=nickname&value=raccoon&skip=0&limit=10",
+        headers={"Authorization": f"Bearer {manager_token}"}
+    )
+    
+    # Asserting responses
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Operation not permitted"
+
+# Test searching users by last name when no users are found (This also applies for first name and nickname)
+async def test_search_users_by_lastname_no_users_found(db_session, email_service, async_client, admin_token):
+    # Create a user with a different last name to ensure no users with the searched last name
+    user_data = {
+        "nickname": "brave_raccoon_181",
+        "email": "user1@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name,
+        "last_name": "Doe"
+    }
+
+    # Create the user in the database using the UserService
+    await UserService.create(db_session, user_data, email_service)
+
+    # Attempt to search users by a non-existing partial last name using the admin token
+    response = await async_client.get(
+        "/users/search/?field=last_name&value=Smith&skip=0&limit=10",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    
+    # Asserting responses
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No users found for last_name = Smith"
+
+# Test search users by first name with pagination (Admin Access)
+async def test_search_users_by_firstname_pagination(db_session, email_service, async_client, admin_token):
+    # Create three users with the same first name
+    for i in range(3):
+        user_data = {
+            "nickname": f"user_{i}",
+            "email": f"user{i}@example.com",
+            "password": "ValidPassword123!",
+            "role": UserRole.ANONYMOUS.name,
+            "first_name": "John"
+        }
+        await UserService.create(db_session, user_data, email_service)
+
+    # Attempt to search users by first name with pagination (first page)
+    response = await async_client.get(
+        "/users/search/?field=first_name&value=John&skip=0&limit=2",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    # Asserting responses for the first page
+    retrieved_users = response.json()
+    print("Response JSON:", retrieved_users)  # Debugging output
+    assert retrieved_users is not None
+    assert len(retrieved_users["items"]) == 2
+    assert retrieved_users["total"] == 4       #Three users and the admin also called John
+    assert retrieved_users["page"] == 1
+    assert retrieved_users["size"] == 2
+    assert retrieved_users["total_pages"] == 2
+
+    # Attempt to fetch the second page
+    response = await async_client.get(
+        "/users/search/?field=first_name&value=John&skip=1&limit=2",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    # Asserting responses for the second page
+    retrieved_users = response.json()
+    assert retrieved_users is not None
+    assert len(retrieved_users["items"]) == 2
+    assert retrieved_users["total"] == 4
+    assert retrieved_users["page"] == 2
+    assert retrieved_users["size"] == 2
+    assert retrieved_users["total_pages"] == 2
