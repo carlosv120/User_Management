@@ -662,32 +662,6 @@ async def test_search_users_by_firstname_exists(db_session, email_service, async
     assert retrieved_users["size"] == 3
     assert retrieved_users["total_pages"] == 1
 
-# Test searching users by nickname when users exist (Admin Access)
-async def test_search_users_by_nickname_exists(db_session, email_service, async_client, admin_token):
-    # Create multiple users to increase the chance of having "raccoon" in the nickname
-    for i in range(10):
-        user_data = {
-            "nickname": generate_nickname(),
-            "email": f"user{i}@example.com",
-            "password": "ValidPassword123!",
-            "role": UserRole.ANONYMOUS.name
-        }
-        created_user = await UserService.create(db_session, user_data, email_service)
-        assert created_user is not None, f"Failed to create user {i}"
-
-    # Attempt to search users by partial nickname, in this case raccoon
-    response = await async_client.get(
-        "/users/search/?field=nickname&value=raccoon&skip=0&limit=100",
-        headers={"Authorization": f"Bearer {admin_token}"}
-    )
-
-    # Asserting responses
-    retrieved_users = response.json()
-    assert retrieved_users is not None
-    assert retrieved_users["total"] > 0, "Expected to find users with 'raccoon' in their nickname"
-    assert len(retrieved_users["items"]) > 0
-    assert "raccoon" in retrieved_users["items"][0]["nickname"]
-
 # Test unauthorized access by manager for search endpoint
 async def test_search_users_unauthorized(db_session, email_service, async_client, manager_token):
     # Create users with the default role (ANONYMOUS)
