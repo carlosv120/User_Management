@@ -5,6 +5,7 @@ from app.dependencies import get_settings
 from app.models.user_model import User, UserRole
 from app.services.user_service import UserService
 from app.utils.nickname_gen import generate_nickname
+from datetime import datetime, timedelta, timezone
 
 pytestmark = pytest.mark.asyncio
 
@@ -179,3 +180,609 @@ async def test_create_user_with_additional_fields(db_session, email_service):
     assert created_user.email == user_data["email"]
     assert created_user.linkedin_profile_url == user_data["linkedin_profile_url"]
     assert created_user.github_profile_url == user_data["github_profile_url"]
+
+# Test getting a user by nickname when the user exists (Admin Access)
+async def test_get_user_by_nickname_exists(db_session, email_service, async_client, admin_token):
+    
+    # Create an anonymous user to be fetched
+    user_data = {
+        "nickname": generate_nickname(),
+        "email": "valid_user@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+
+    # Create the anonymous user in the database using the UserService
+    user = await UserService.create(db_session, user_data, email_service)
+
+    # Attempt to fetch the user by nickname using the admin token
+    response = await async_client.get(
+        f"/users/nickname/{user.nickname}",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    # Asserting responses
+    retrieved_user = response.json()
+    assert retrieved_user is not None
+    assert retrieved_user["nickname"] == user.nickname
+
+# Test unauthorized access by manager for nickname endpoint
+async def test_get_user_by_nickname_unauthorized(db_session, email_service, async_client, manager_token):
+    
+    # Create an anonymous user to be fetched
+    anonymous_data = {
+        "nickname": generate_nickname(),
+        "email": "anonymous_user@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+
+    # Create the anonymous user in the database using the UserService
+    anonymous_user = await UserService.create(db_session, anonymous_data, email_service)
+
+    # Attempt to fetch the user by nickname using the admin token
+    response = await async_client.get(
+        f"/users/nickname/{anonymous_user.nickname}",
+        headers={"Authorization": f"Bearer {manager_token}"}
+    )
+
+    # Asserting responses
+    assert response.json()["detail"] == "Operation not permitted"
+
+# Test fetching a user by nickname when the user does not exist
+async def test_get_user_by_nickname_does_not_exist(async_client, admin_token):
+    
+    non_existent_nickname = "non_existent_nickname"
+    
+    # Attempt to fetch the non-existing user by nickname using the admin token
+    response = await async_client.get(
+        f"/users/nickname/{non_existent_nickname}",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    
+    # Asserting responses
+    assert response.status_code == 404
+    assert response.json()["detail"] == "User not found"
+
+
+# Test fetching a user by email when the user exists (Admin Access)
+async def test_get_user_by_email_exists(db_session, email_service, async_client, admin_token):
+    
+    # Create an anonymous user to be fetched
+    user_data = {
+        "nickname": generate_nickname(),
+        "email": "valid_user@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+
+    # Create the anonymous user in the database using the UserService
+    user = await UserService.create(db_session, user_data, email_service)
+
+    # Attempt to fetch the user by email using the admin token
+    response = await async_client.get(
+        f"/users/email/{user.email}",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    # Asserting responses
+    retrieved_user = response.json()
+    assert retrieved_user is not None
+    assert retrieved_user["email"] == user.email
+
+
+# Test unauthorized access by manager for email endpoint
+async def test_get_user_by_email_unauthorized(db_session, email_service, async_client, manager_token):
+    
+    # Create an anonymous user to be fetched
+    anonymous_data = {
+        "nickname": generate_nickname(),
+        "email": "anonymous_user@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+        
+    # Create the anonymous user in the database using the UserService
+    anonymous_user = await UserService.create(db_session, anonymous_data, email_service)
+
+    # Attempt to fetch the user by email using the admin token
+    response = await async_client.get(
+        f"/users/email/{anonymous_user.email}",
+        headers={"Authorization": f"Bearer {manager_token}"}
+    )
+
+    # Asserting responses
+    assert response.json()["detail"] == "Operation not permitted"
+
+
+# Test fetching a user by email when the user does not exist
+async def test_get_user_by_email_does_not_exist(async_client, admin_token):
+
+    non_existent_email = "non_existent_email@example.com"
+    
+    # Attempt to fetch the non-existing user by email using the admin token
+    response = await async_client.get(
+        f"/users/email/{non_existent_email}",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    
+    assert response.status_code == 404
+    assert response.json()["detail"] == "User not found"
+
+# Test fetching users by role when users exist (Admin Access)
+async def test_get_users_by_role_exists(db_session, email_service, async_client, admin_token):
+    # Create users with the default role (ANONYMOUS)
+    user_data_1 = {
+        "nickname": generate_nickname(),
+        "email": "authenticated_user1@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+
+    user_data_2 = {
+        "nickname": generate_nickname(),
+        "email": "authenticated_user2@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+
+    # Create the users in the database using the UserService
+    user1 = await UserService.create(db_session, user_data_1, email_service)
+    user2 = await UserService.create(db_session, user_data_2, email_service)
+
+    # Attempt to fetch users by role using the admin token
+    response = await async_client.get(
+        "/users/role/ANONYMOUS?skip=0&limit=10",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    
+    # Print the response JSON for debugging
+    retrieved_users = response.json()  
+    assert retrieved_users is not None
+    assert retrieved_users["total"] == 2
+    assert retrieved_users["page"] == 1
+    assert retrieved_users["size"] == 2
+    assert retrieved_users["total_pages"] == 1
+    assert any(user["email"] == "authenticated_user1@example.com" for user in retrieved_users["items"])
+    assert any(user["email"] == "authenticated_user2@example.com" for user in retrieved_users["items"])
+
+# Test unauthorized access by manager for role endpoint
+async def test_get_users_by_role_unauthorized(db_session, email_service, async_client, manager_token):
+    # Create users with the default role (ANONYMOUS)
+    user_data_1 = {
+        "nickname": generate_nickname(),
+        "email": "authenticated_user1@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+
+    user_data_2 = {
+        "nickname": generate_nickname(),
+        "email": "authenticated_user2@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+
+    # Create the users in the database using the UserService
+    await UserService.create(db_session, user_data_1, email_service)
+    await UserService.create(db_session, user_data_2, email_service)
+
+    # Attempt to fetch users by role using the manager token
+    response = await async_client.get(
+        "/users/role/ANONYMOUS?skip=0&limit=10",
+        headers={"Authorization": f"Bearer {manager_token}"}
+    )
+    
+    # Asserting responses
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Operation not permitted"
+
+# Test fetching users by role when the role does not exist
+async def test_get_users_by_role_not_found(async_client, admin_token):
+    non_existent_role = "NONEXISTENTROLE"
+
+    # Attempt to fetch users by a non-existent role using the admin token
+    response = await async_client.get(
+        f"/users/role/{non_existent_role}?skip=0&limit=10",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid user role provided"
+
+# Test fetching users by role when no users are found for the given role (Admin Access)
+async def test_get_users_by_role_no_users_found(db_session, email_service, async_client, admin_token):
+    # Create a user with a different role to ensure no users with the given role
+    user_data = {
+        "nickname": generate_nickname(),
+        "email": "admin_user@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ADMIN.name
+    }
+
+    # Create the user in the database using the UserService
+    await UserService.create(db_session, user_data, email_service)
+
+    # Attempt to fetch users by a role that has no users (e.g., AUTHENTICATED)
+    response = await async_client.get(
+        "/users/role/AUTHENTICATED?skip=0&limit=10",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    
+    # Asserting responses
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No users with this role"
+
+# Test pagination when fetching users by role (Admin Access)
+async def test_get_users_by_role_pagination(db_session, email_service, async_client, admin_token):
+    # Create three users with the ANONYMOUS role
+    for i in range(3):
+        user_data = {
+            "nickname": generate_nickname(),
+            "email": f"anonymous_user{i}@example.com",
+            "password": "ValidPassword123!",
+            "role": UserRole.ANONYMOUS.name
+        }
+        await UserService.create(db_session, user_data, email_service)
+
+    # Attempt to fetch users by role with pagination (first page)
+    response = await async_client.get(
+        "/users/role/ANONYMOUS?skip=0&limit=2",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    # Asserting responses for the first page
+    retrieved_users = response.json()
+    assert retrieved_users is not None
+    assert len(retrieved_users["items"]) == 2
+    assert retrieved_users["total"] == 3
+    assert retrieved_users["page"] == 1
+    assert retrieved_users["size"] == 2
+    assert retrieved_users["total_pages"] == 2
+
+    # Attempt to fetch the second page
+    response = await async_client.get(
+        "/users/role/ANONYMOUS?skip=1&limit=2",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    # Asserting responses for the second page
+    retrieved_users = response.json()
+    assert retrieved_users is not None
+    assert len(retrieved_users["items"]) == 1
+    assert retrieved_users["total"] == 3
+    assert retrieved_users["page"] == 2
+    assert retrieved_users["size"] == 1
+    assert retrieved_users["total_pages"] == 2
+
+# Test fetching users by created_at when users exist (Admin Access)
+async def test_get_users_by_created_at_exists(db_session, email_service, async_client, admin_token):
+    # Create users with the default role (ANONYMOUS)
+    user_data_1 = {
+        "nickname": generate_nickname(),
+        "email": "user1@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name,
+        "created_at": datetime.now(timezone.utc) - timedelta(days=5)
+    }
+
+    user_data_2 = {
+        "nickname": generate_nickname(),
+        "email": "user2@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name,
+        "created_at": datetime.now(timezone.utc) - timedelta(days=3)
+    }
+
+    # Create the users in the database using the UserService
+    user1 = await UserService.create(db_session, user_data_1, email_service)
+    user2 = await UserService.create(db_session, user_data_2, email_service)
+
+    # Attempt to fetch users by created_at using the admin token
+    response = await async_client.get(
+        "/users/created/2024-01-01/2024-12-31?skip=0&limit=10&order=asc",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    
+    # Print the response JSON for debugging
+    retrieved_users = response.json()  
+    assert retrieved_users is not None
+    assert retrieved_users["total"] == 3
+    assert retrieved_users["page"] == 1
+    assert retrieved_users["size"] == 3
+    assert retrieved_users["total_pages"] == 1
+
+# Test unauthorized access by manager for created_at endpoint
+async def test_get_users_by_created_at_unauthorized(db_session, email_service, async_client, manager_token):
+    # Create users with the default role (ANONYMOUS)
+    user_data_1 = {
+        "nickname": generate_nickname(),
+        "email": "user1@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name,
+        "created_at": datetime.now(timezone.utc) - timedelta(days=5)
+    }
+
+    user_data_2 = {
+        "nickname": generate_nickname(),
+        "email": "user2@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name,
+        "created_at": datetime.now(timezone.utc) - timedelta(days=3)
+    }
+
+    # Create the users in the database using the UserService
+    await UserService.create(db_session, user_data_1, email_service)
+    await UserService.create(db_session, user_data_2, email_service)
+
+    # Attempt to fetch users by created_at using the manager token
+    response = await async_client.get(
+        "/users/created/2024-01-01/2024-12-31?skip=0&limit=10",
+        headers={"Authorization": f"Bearer {manager_token}"}
+    )
+    
+    # Asserting responses
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Operation not permitted"
+
+# Test fetching users by created_at when no users are found
+async def test_get_users_by_created_at_no_users_found(db_session, email_service, async_client, admin_token):
+    # Create a user with a different created_at to ensure no users in the given range
+    user_data = {
+        "nickname": generate_nickname(),
+        "email": "admin_user@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ADMIN.name,
+        "created_at": datetime.now(timezone.utc) - timedelta(days=365)
+    }
+
+    # Create the user in the database using the UserService
+    await UserService.create(db_session, user_data, email_service)
+
+    # Attempt to fetch users by created_at for a range that has no users
+    response = await async_client.get(
+        "/users/created/2024-01-01/2024-01-02?skip=0&limit=10&order=asc",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    
+    # Asserting responses
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No users found within the specified date range"
+
+# Test pagination when fetching users by created_at (Admin Access)
+async def test_get_users_by_created_at_pagination(db_session, email_service, async_client, admin_token):
+    # Create three users with different created_at dates
+    for i in range(3):
+        user_data = {
+            "nickname": generate_nickname(),
+            "email": f"user{i}@example.com",
+            "password": "ValidPassword123!",
+            "role": UserRole.ANONYMOUS.name,
+            "created_at": datetime.now(timezone.utc) - timedelta(days=(5 - i))
+        }
+        await UserService.create(db_session, user_data, email_service)
+
+    # Attempt to fetch users by created_at with pagination (first page)
+    response = await async_client.get(
+        "/users/created/2024-01-01/2024-12-31?skip=0&limit=2&order=asc",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    # Asserting responses for the first page
+    retrieved_users = response.json()
+    assert retrieved_users is not None
+    assert len(retrieved_users["items"]) == 2
+    assert retrieved_users["total"] == 4
+    assert retrieved_users["page"] == 1
+    assert retrieved_users["size"] == 2
+    assert retrieved_users["total_pages"] == 2
+
+    # Attempt to fetch the second page
+    response = await async_client.get(
+        "/users/created/2024-01-01/2024-12-31?skip=1&limit=2&order=asc",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    # Asserting responses for the second page
+    retrieved_users = response.json()
+    assert retrieved_users is not None
+    assert len(retrieved_users["items"]) == 2
+    assert retrieved_users["total"] == 4
+    assert retrieved_users["page"] == 2
+    assert retrieved_users["size"] == 2
+    assert retrieved_users["total_pages"] == 2
+
+# Test fetching users by created_at in descending order (Admin Access)
+async def test_get_users_by_created_at_descending_order(db_session, email_service, async_client, admin_token):
+    # Create two users with different created_at dates
+    user_data_1 = {
+        "nickname": generate_nickname(),
+        "email": "user1@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name,
+        "created_at": datetime.now(timezone.utc) - timedelta(days=2)
+    }
+    user_data_2 = {
+        "nickname": generate_nickname(),
+        "email": "user2@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name,
+        "created_at": datetime.now(timezone.utc) - timedelta(days=1)
+    }
+    await UserService.create(db_session, user_data_1, email_service)
+    await UserService.create(db_session, user_data_2, email_service)
+
+    # Attempt to fetch users by created_at in descending order
+    response = await async_client.get(
+        "/users/created/2024-01-01/2024-12-31?order=Created (latest)&skip=0&limit=10",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    
+    # Asserting responses
+    retrieved_users = response.json()
+    assert retrieved_users is not None
+    assert len(retrieved_users["items"]) == 3
+    assert retrieved_users["items"][0]["email"] == "user2@example.com"
+    assert retrieved_users["items"][1]["email"] == "user1@example.com"
+
+# Test searching users by first name when users exist (Admin Access) (This also applies for last name)
+async def test_search_users_by_firstname_exists(db_session, email_service, async_client, admin_token):
+    # Create users with the default role (ANONYMOUS)
+    user_data_1 = {
+        "nickname": "brave_raccoon_181",
+        "email": "user1@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name,
+        "first_name": "John"
+    }
+
+    user_data_2 = {
+        "nickname": "clever_raccoon_182",
+        "email": "user2@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name,
+        "first_name": "Johnny"
+    }
+
+    # Create the users in the database using the UserService
+    await UserService.create(db_session, user_data_1, email_service)
+    await UserService.create(db_session, user_data_2, email_service)
+
+    # Attempt to search users by partial first name using the admin token
+    response = await async_client.get(
+        "/users/search/?field=first_name&value=John&skip=0&limit=10",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    
+    # Print the response JSON for debugging
+    retrieved_users = response.json()
+    assert retrieved_users is not None
+    assert retrieved_users["total"] == 3
+    assert retrieved_users["page"] == 1
+    assert retrieved_users["size"] == 3
+    assert retrieved_users["total_pages"] == 1
+
+# Test searching users by nickname when users exist (Admin Access)
+async def test_search_users_by_nickname_exists(db_session, email_service, async_client, admin_token):
+    # Create multiple users to increase the chance of having "raccoon" in the nickname
+    for i in range(10):
+        user_data = {
+            "nickname": generate_nickname(),
+            "email": f"user{i}@example.com",
+            "password": "ValidPassword123!",
+            "role": UserRole.ANONYMOUS.name
+        }
+        created_user = await UserService.create(db_session, user_data, email_service)
+        assert created_user is not None, f"Failed to create user {i}"
+
+    # Attempt to search users by partial nickname, in this case raccoon
+    response = await async_client.get(
+        "/users/search/?field=nickname&value=raccoon&skip=0&limit=100",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    # Asserting responses
+    retrieved_users = response.json()
+    assert retrieved_users is not None
+    assert retrieved_users["total"] > 0, "Expected to find users with 'raccoon' in their nickname"
+    assert len(retrieved_users["items"]) > 0
+    assert "raccoon" in retrieved_users["items"][0]["nickname"]
+
+# Test unauthorized access by manager for search endpoint
+async def test_search_users_unauthorized(db_session, email_service, async_client, manager_token):
+    # Create users with the default role (ANONYMOUS)
+    user_data_1 = {
+        "nickname": "brave_raccoon_181",
+        "email": "user1@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+
+    user_data_2 = {
+        "nickname": "clever_raccoon_182",
+        "email": "user2@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name
+    }
+
+    # Create the users in the database using the UserService
+    await UserService.create(db_session, user_data_1, email_service)
+    await UserService.create(db_session, user_data_2, email_service)
+
+    # Attempt to search users by partial nickname using the manager token
+    response = await async_client.get(
+        "/users/search/?field=nickname&value=raccoon&skip=0&limit=10",
+        headers={"Authorization": f"Bearer {manager_token}"}
+    )
+    
+    # Asserting responses
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Operation not permitted"
+
+# Test searching users by last name when no users are found (This also applies for first name and nickname)
+async def test_search_users_by_lastname_no_users_found(db_session, email_service, async_client, admin_token):
+    # Create a user with a different last name to ensure no users with the searched last name
+    user_data = {
+        "nickname": "brave_raccoon_181",
+        "email": "user1@example.com",
+        "password": "ValidPassword123!",
+        "role": UserRole.ANONYMOUS.name,
+        "last_name": "Doe"
+    }
+
+    # Create the user in the database using the UserService
+    await UserService.create(db_session, user_data, email_service)
+
+    # Attempt to search users by a non-existing partial last name using the admin token
+    response = await async_client.get(
+        "/users/search/?field=last_name&value=Smith&skip=0&limit=10",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    
+    # Asserting responses
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No users found for last_name = Smith"
+
+# Test search users by first name with pagination (Admin Access)
+async def test_search_users_by_firstname_pagination(db_session, email_service, async_client, admin_token):
+    # Create three users with the same first name
+    for i in range(3):
+        user_data = {
+            "nickname": f"user_{i}",
+            "email": f"user{i}@example.com",
+            "password": "ValidPassword123!",
+            "role": UserRole.ANONYMOUS.name,
+            "first_name": "John"
+        }
+        await UserService.create(db_session, user_data, email_service)
+
+    # Attempt to search users by first name with pagination (first page)
+    response = await async_client.get(
+        "/users/search/?field=first_name&value=John&skip=0&limit=2",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    # Asserting responses for the first page
+    retrieved_users = response.json()
+    print("Response JSON:", retrieved_users)  # Debugging output
+    assert retrieved_users is not None
+    assert len(retrieved_users["items"]) == 2
+    assert retrieved_users["total"] == 4       #Three users and the admin also called John
+    assert retrieved_users["page"] == 1
+    assert retrieved_users["size"] == 2
+    assert retrieved_users["total_pages"] == 2
+
+    # Attempt to fetch the second page
+    response = await async_client.get(
+        "/users/search/?field=first_name&value=John&skip=1&limit=2",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    # Asserting responses for the second page
+    retrieved_users = response.json()
+    assert retrieved_users is not None
+    assert len(retrieved_users["items"]) == 2
+    assert retrieved_users["total"] == 4
+    assert retrieved_users["page"] == 2
+    assert retrieved_users["size"] == 2
+    assert retrieved_users["total_pages"] == 2

@@ -19,13 +19,15 @@ Key Highlights:
 """
 
 from builtins import dict, int, len, str
-from datetime import timedelta
+from datetime import timedelta, datetime
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Response, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from sqlalchemy import func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db, get_email_service, require_role
+from app.models.user_model import User
 from app.schemas.pagination_schema import EnhancedPagination
 from app.schemas.token_schema import TokenResponse
 from app.schemas.user_schemas import LoginRequest, UserBase, UserCreate, UserListResponse, UserResponse, UserUpdate
@@ -246,3 +248,225 @@ async def verify_email(user_id: UUID, token: str, db: AsyncSession = Depends(get
     if await UserService.verify_email_with_token(db, user_id, token):
         return {"message": "Email verified successfully"}
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification token")
+
+@router.get("/users/nickname/{nickname}", response_model=UserResponse, name="get_user_by_nickname", tags=["User Management Feature (Admin Role)"])
+async def get_user_by_nickname(nickname: str, request: Request, db: AsyncSession = Depends(get_db), token: str = Depends(oauth2_scheme), current_user: dict = Depends(require_role(["ADMIN"]))):
+    """
+    Endpoint to fetch a user by their nickname.
+
+    Utilizes the UserService to query the database asynchronously for the user and constructs a response
+    model that includes the user's details along with HATEOAS links for possible next actions.
+
+    Args:
+        nickname: Nickname of the user to fetch.
+        request: The request object, used to generate full URLs in the response.
+        db: Dependency that provides an AsyncSession for database access.
+        token: The OAuth2 access token obtained through OAuth2PasswordBearer dependency.
+    """
+    user = await UserService.get_by_nickname(db, nickname)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    return UserResponse.model_construct(
+        id=user.id,
+        nickname=user.nickname,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        bio=user.bio,
+        profile_picture_url=user.profile_picture_url,
+        github_profile_url=user.github_profile_url,
+        linkedin_profile_url=user.linkedin_profile_url,
+        role=user.role,
+        email=user.email,
+        last_login_at=user.last_login_at,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+        links=create_user_links(user.id, request)  
+    )
+
+@router.get("/users/email/{email}", response_model=UserResponse, name="get_user_by_email", tags=["User Management Feature (Admin Role)"])
+async def get_user_by_email(email: str, request: Request, db: AsyncSession = Depends(get_db), token: str = Depends(oauth2_scheme), current_user: dict = Depends(require_role(["ADMIN"]))):
+    """
+    Endpoint to fetch a user by their email.
+
+    Utilizes the UserService to query the database asynchronously for the user and constructs a response
+    model that includes the user's details along with HATEOAS links for possible next actions.
+
+    Args:
+        email: Email of the user to fetch.
+        request: The request object, used to generate full URLs in the response.
+        db: Dependency that provides an AsyncSession for database access.
+        token: The OAuth2 access token obtained through OAuth2PasswordBearer dependency.
+    """
+    user = await UserService.get_by_email(db, email)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    return UserResponse.model_construct(
+        id=user.id,
+        nickname=user.nickname,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        bio=user.bio,
+        profile_picture_url=user.profile_picture_url,
+        github_profile_url=user.github_profile_url,
+        linkedin_profile_url=user.linkedin_profile_url,
+        role=user.role,
+        email=user.email,
+        last_login_at=user.last_login_at,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+        links=create_user_links(user.id, request)  
+    )
+
+@router.get("/users/role/{role}", tags=["User Management Feature (Admin Role)"])
+async def get_users_by_role(
+    role: str,
+    request: Request,
+    skip: int = 0,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_role(["ADMIN"]))
+):
+    role = role.upper()
+    try:
+        # Count total users by role
+        total_users_query = select(func.count()).select_from(User).where(User.role == role)
+        result = await db.execute(total_users_query)
+        total_users = result.scalar()
+
+        if total_users == 0:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No users with this role")
+
+        # Calculate total pages
+        total_pages = (total_users + limit - 1) // limit
+
+        # Get users by role with pagination
+        users_query = select(User).where(User.role == role).offset(skip * limit).limit(limit)
+        users_result = await db.execute(users_query)
+        users = users_result.scalars().all()
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user role provided")
+
+    user_responses = [UserResponse.model_validate(user) for user in users]
+    pagination_links = generate_pagination_links(request, skip, limit, total_users)
+
+    # Manually constructing the response to include total_pages as UserListResponse does not include total pages.
+    response_data = {
+        "items": user_responses,
+        "total": total_users,
+        "page": skip + 1,
+        "size": len(user_responses),
+        "total_pages": total_pages
+    }
+
+    return response_data
+
+@router.get("/users/created/{start_date}/{end_date}", tags=["User Management Feature (Admin Role)"])
+async def get_users_by_created_at(
+    start_date: str,
+    end_date: str,
+    request: Request,
+    order: str = Query(... , description="Sort order of the results by creation date", enum=["Created (earliest)", "Created (latest)"]),
+    skip: int = 0,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_role(["ADMIN"]))
+):
+    """
+    Endpoint to fetch users created within a specified date range.
+
+    Parameters:
+    - start_date: The start date for the filter range (YYYY-MM-DD format).
+    - end_date: The end date for the filter range (YYYY-MM-DD format).
+    - order: Sort order of the results by creation date (asc for ascending, desc for descending).
+    - skip: Number of records to skip for pagination.
+    - limit: Maximum number of records to return for pagination.
+    """
+    try:
+        start_date_parsed = datetime.strptime(start_date, "%Y-%m-%d")
+        end_date_parsed = datetime.strptime(end_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid date format. Use YYYY-MM-DD format.")
+
+    users = await UserService.get_users_by_created_at(db, start_date_parsed, end_date_parsed, order, skip, limit)
+
+    if not users:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No users found within the specified date range")
+
+    count_query = select(func.count()).select_from(User).where(and_(User.created_at >= start_date_parsed, User.created_at <= end_date_parsed))
+    total_users_result = await db.execute(count_query)
+    total_users = total_users_result.scalar()
+
+    total_pages = (total_users + limit - 1) // limit
+
+    user_responses = [UserResponse.model_validate(user) for user in users]
+    pagination_links = generate_pagination_links(request, skip, limit, total_users)
+
+    # Construct the final response with pagination details
+    response_data = {
+        "items": user_responses,
+        "total": total_users,
+        "page": skip + 1,
+        "size": len(user_responses),
+        "total_pages": total_pages,
+    }
+
+    return response_data
+
+@router.get("/users/search/", tags=["User Management Feature (Admin Role)"])
+async def search_users(
+    request: Request,
+    field: str = Query(..., description="The field to search by", enum=["first_name", "last_name", "nickname"]),
+    value: str = Query(..., description="The value to search for"),
+    skip: int = 0,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_role(["ADMIN"]))
+):
+    """
+    Endpoint to search users by a specific field.
+
+    Parameters:
+    - field: The field to search by (first_name, last_name, nickname).
+    - value: The value to search for.
+    - skip: Number of records to skip for pagination.
+    - limit: Maximum number of records to return for pagination.
+    """
+    try:
+        # Dynamically build the filter expression based on the field
+        filter_expr = getattr(User, field).ilike(f"%{value}%")
+    except AttributeError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid search field: {field}")
+
+    total_query = select(func.count()).select_from(User).where(filter_expr)
+    total_result = await db.execute(total_query)
+    total_users = total_result.scalar()
+
+    if total_users == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No users found for {field} = {value}")
+
+    total_pages = (total_users + limit - 1) // limit
+
+    if skip * limit >= total_users:
+        raise HTTPException(status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE, detail="Requested page is out of range")
+
+    users_query = select(User).where(filter_expr).offset(skip * limit).limit(limit)
+    users_result = await db.execute(users_query)
+    users = users_result.scalars().all()
+
+    user_responses = [UserResponse.model_validate(user) for user in users]
+    pagination_links = generate_pagination_links(request, skip, limit, total_users)
+
+    response_data = {
+        "items": user_responses,
+        "total": total_users,
+        "page": skip + 1,
+        "size": len(user_responses),
+        "total_pages": total_pages,
+    }
+
+    return response_data
