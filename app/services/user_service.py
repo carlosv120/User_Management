@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import secrets
 from typing import Optional, Dict, List
 from pydantic import ValidationError
-from sqlalchemy import func, null, update, select
+from sqlalchemy import func, null, update, select, and_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_email_service, get_settings
@@ -48,6 +48,30 @@ class UserService:
     @classmethod
     async def get_by_email(cls, session: AsyncSession, email: str) -> Optional[User]:
         return await cls._fetch_user(session, email=email)
+
+    @classmethod
+    async def get_by_role(cls, session: AsyncSession, role: str, skip: int = 0, limit: int = 10) -> List[User]:
+        query = select(User).where(User.role == role).offset(skip).limit(limit)
+        result = await session.execute(query)
+        return result.scalars().all()
+
+    @classmethod
+    async def get_users_by_created_at(
+        cls, session: AsyncSession, start_date: datetime, end_date: datetime, order: str, skip: int = 0, limit: int = 10) -> List[User]:
+        order_by = User.created_at.asc() if order == "Created (earliest)" else User.created_at.desc()
+        query = select(User).where(and_(User.created_at >= start_date, User.created_at <= end_date)).order_by(order_by).offset(skip * limit).limit(limit)
+        result = await session.execute(query)
+        return result.scalars().all()
+
+    @classmethod
+    async def search_users(cls, session: AsyncSession, field: str, value: str, skip: int = 0, limit: int = 10) -> List[User]:
+        if field not in ["first_name", "last_name", "nickname"]:
+            return []
+
+        query = select(User).where(getattr(User, field).ilike(f"%{value}%")).offset(skip * limit).limit(limit)
+        result = await session.execute(query)
+        return result.scalars().all()
+
 
     @classmethod
     async def create(cls, session: AsyncSession, user_data: Dict[str, str], email_service: EmailService) -> Optional[User]:
